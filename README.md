@@ -29,3 +29,4 @@ Contributing
 
 If you have suggestions or optimizations to enhance the script, please create a pull request. For major changes, kindly open an issue first to discuss the proposed alteration.
 
+![image](https://github.com/AndreiTudosi/Scripted-LDAP-Integration-in-Distributed-pfSense-Firewalls/assets/136599367/ea1f154c-e16d-49e2-9b68-87f3477a10e6)
