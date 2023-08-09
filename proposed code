@@ -1,0 +1,93 @@
+#!/usr/bin/env python
+import os
+import sys
+import ldap
+from pprint import pprint
+
+# Define LDAP server details
+ldap_server = 'ldap://ldap.example.com'
+ldap_bind_dn = 'cn=admin,dc=example,dc=com'
+ldap_bind_password = 'password'
+ldap_base_dn = 'ou=people,dc=example,dc=com'
+
+# Define pfSense firewall details
+pfsense_firewalls = ['192.168.1.1', '192.168.1.2', '192.168.1.3']
+pfsense_username = 'admin'
+pfsense_password = 'password'
+
+# Define default firewall rule
+default_rule = {
+    'type': 'pass',
+    'interface': 'wan',
+    'protocol': 'tcp',
+    'destination': 'any',
+    'destination_port': 'any',
+    'source': '192.168.1.100',
+    'source_port': 'any',
+    'description': 'Default rule for all users to access all firewalls from IP 192.168.1.100'
+}
+
+# Connect to LDAP server
+ldap_conn = ldap.initialize(ldap_server)
+ldap_conn.simple_bind_s(ldap_bind_dn, ldap_bind_password)
+
+# Iterate over each pfSense firewall in the distributed firewall setup
+for pfsense_firewall in pfsense_firewalls:
+    # Define pfSense API endpoint
+    pfsense_api_url = 'https://' + pfsense_firewall + '/api.php'
+
+    # Retrieve user accounts from LDAP directory
+    ldap_filter = '(objectClass=posixAccount)'
+    ldap_attrs = ['cn', 'uid', 'userPassword']
+    ldap_results = ldap_conn.search_s(ldap_base_dn, ldap.SCOPE_SUBTREE, ldap_filter, ldap_attrs)
+    users = []
+    for dn, attrs in ldap_results:
+        if 'userPassword' in attrs:
+            users.append({
+                'username': attrs['cn'][0].decode(),
+                'password': attrs['userPassword'][0].decode('utf-8'),
+                'uid': attrs['uid'][0].decode(),
+            })
+
+    # Generate pfSense API authentication key
+    api_key = None
+    try:
+        output = os.popen('curl --insecure --data "username=' + pfsense_username + '&password=' + pfsense_password + '" ' + pfsense_api_url + '/get_api_key.php').read()
+        api_key = output.strip()
+    except:
+        print('Failed to generate API key for ' + pfsense_firewall)
+        continue
+
+    # Add default rule for all users
+    try:
+        output = os.popen('curl --insecure --data "username=' + pfsense_username + '&password=' + api_key + '&command=add_rule&position=top&rule=' + str(default_rule) + '" ' + pfsense_api_url).read()
+        pprint(output)
+    except:
+        print('Failed to add default rule on ' + pfsense_firewall)
+
+    # Configure user accounts on pfSense firewall
+    for user in users:
+        try:
+            output = os.popen('curl --insecure --data "username=' + pfsense_username + '&password=' + api_key + '&command=edit_user&username=' + user['username'] + '&password=' + user['password'] + '&uid=' + user['uid'] + '" ' + pfsense_api_url).read()
+            pprint(output)
+        except:
+            print('Failed to configure user account ' + user['username'] + ' on ' + pfsense_firewall)
+
+# Define firewall rule for management access
+management_rule = {
+    'type': 'pass',
+    'interface': 'wan',
+    'protocol': 'tcp',
+    'destination': 'any',
+    'destination_port': 'any',
+    'source': '192.168.1.200',
+    'source_port': 'any',
+    'description': 'Allow management access for IP address 192.168.1.200'
+}
+
+# Add firewall rule for management access
+try:
+    output = os.popen('curl --insecure --data "username=' + pfsense_username + '&password=' + api_key + '&command=add_rule&position=top&rule=' + str(management_rule) + '" ' + pfsense_api_url).read()
+    pprint(output)
+except:
+    print('Failed to add management rule on ' + pfsense_firewall)
